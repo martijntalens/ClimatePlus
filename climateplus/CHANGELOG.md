@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0
+
+- Entities without an area are no longer averaged into a "No area" room. They
+  are listed one by one and no longer count towards the house averages,
+  comfort score, warmest/coldest room or advice.
+- Sensors of weather services without an area (Buienradar, Met.no,
+  OpenWeatherMap, …) are now treated as outdoor sensors.
+- New settings page (gear icon): pick the entities to hide from a searchable
+  list instead of typing entity IDs. The selection is stored by the app; the
+  `exclude_entities` option keeps working.
+
 ## 1.0.0
 
 - First release.

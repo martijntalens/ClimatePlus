@@ -8,7 +8,9 @@ Responsibilities:
   * cache states + area/floor/device/entity registries for climate entities
   * expose a small JSON API for the dashboard (bootstrap, series, forecast)
   * forward live state changes to connected dashboards
-All comfort/insight logic lives in the frontend.
+  * store the app's own settings (hidden entities) in /data/settings.json
+All comfort/insight logic lives in the frontend. Home Assistant itself is only
+read, never changed.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -33,6 +36,9 @@ SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 HA_WS_URL = os.environ.get("HA_WS_URL", "ws://supervisor/core/websocket")
 HA_TOKEN = os.environ.get("HA_TOKEN") or SUPERVISOR_TOKEN
 OPTIONS_PATH = Path(os.environ.get("CLIMATEPLUS_OPTIONS", "/data/options.json"))
+SETTINGS_PATH = Path(os.environ.get("CLIMATEPLUS_SETTINGS", "/data/settings.json"))
+ENTITY_ID_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
+MAX_EXCLUDED = 2000
 STATIC_DIR = Path(__file__).parent / "static"
 PORT = int(os.environ.get("CLIMATEPLUS_PORT", "8099"))
 INGRESS_IP = "172.30.32.2"
@@ -102,6 +108,41 @@ def load_options() -> dict[str, Any]:
         _LOGGER.warning("Could not read options (%s), using defaults", err)
     options["exclude_entities"] = [e for e in options.get("exclude_entities") or [] if e]
     return options
+
+
+def clean_entity_ids(value: Any) -> list[str]:
+    """Validate a list of entity IDs from the dashboard; raises ValueError."""
+    if not isinstance(value, list):
+        raise ValueError("exclude_entities must be a list")
+    if len(value) > MAX_EXCLUDED:
+        raise ValueError("too many entities")
+    cleaned: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not ENTITY_ID_RE.match(item):
+            raise ValueError(f"invalid entity id: {str(item)[:80]}")
+        if item not in cleaned:
+            cleaned.append(item)
+    return sorted(cleaned)
+
+
+def load_settings() -> dict[str, Any]:
+    """Settings changed from the dashboard (stored next to options.json)."""
+    try:
+        data = json.loads(SETTINGS_PATH.read_text("utf-8"))
+        return {"exclude_entities": clean_entity_ids(data.get("exclude_entities", []))}
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError, AttributeError) as err:
+        _LOGGER.warning("Ignoring unreadable settings file %s (%s)", SETTINGS_PATH, err)
+    return {"exclude_entities": []}
+
+
+def save_settings(settings: dict[str, Any]) -> None:
+    """Write settings atomically so a crash never leaves a half-written file."""
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SETTINGS_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(settings, indent=2), "utf-8")
+    os.replace(tmp, SETTINGS_PATH)
 
 
 def is_battery(state: dict) -> bool:
@@ -225,10 +266,13 @@ class HAError(Exception):
 
 
 class HomeAssistant:
-    def __init__(self, options: dict[str, Any], broadcast: Callable[[dict], Awaitable[None]]):
+    def __init__(
+        self, options: dict[str, Any], settings: dict[str, Any], broadcast: Callable[[dict], Awaitable[None]]
+    ):
         self.options = options
         self.broadcast = broadcast
-        self.excluded = set(options["exclude_entities"])
+        self.option_excluded = set(options["exclude_entities"])
+        self.app_excluded = set(settings.get("exclude_entities") or [])
         self.connected = asyncio.Event()
         self.config: dict[str, Any] = {}
         self.states: dict[str, dict] = {}
@@ -370,10 +414,22 @@ class HomeAssistant:
         entities = await self.call({"type": "config/entity_registry/list"}) or []
         self.entity_registry = {e["entity_id"]: e for e in entities}
 
+    @property
+    def excluded(self) -> set[str]:
+        return self.option_excluded | self.app_excluded
+
+    async def set_app_excluded(self, entity_ids: list[str]) -> None:
+        self.app_excluded = set(entity_ids)
+        self._rebuild_relevant()
+        await self.broadcast({"type": "reload"})
+
     def _rebuild_relevant(self) -> None:
+        self.relevant = self._climate_entities(self.excluded)
+
+    def _climate_entities(self, excluded: set[str]) -> set[str]:
         relevant: set[str] = set()
         for entity_id, state in self.states.items():
-            if not is_relevant(state, self.excluded):
+            if not is_relevant(state, excluded):
                 continue
             entry = self.entity_registry.get(entity_id) or {}
             if entry.get("disabled_by"):
@@ -393,7 +449,39 @@ class HomeAssistant:
                 device_id = (self.entity_registry.get(entity_id) or {}).get("device_id")
                 if device_id not in climate_devices:
                     relevant.discard(entity_id)
-        self.relevant = relevant
+        return relevant
+
+    def entity_catalog(self) -> dict[str, Any]:
+        """All climate entities ClimatePlus can show, including hidden ones (for the settings page)."""
+        items = []
+        for entity_id in sorted(self._climate_entities(set()) - {"sun.sun"}):
+            state = self.states.get(entity_id) or {}
+            attrs = state.get("attributes") or {}
+            entry = self.entity_registry.get(entity_id) or {}
+            device = self.devices.get(entry.get("device_id") or "") or {}
+            if entity_id in self.option_excluded:
+                excluded_by = "options"
+            elif entity_id in self.app_excluded:
+                excluded_by = "app"
+            else:
+                excluded_by = None
+            items.append(
+                {
+                    "entity_id": entity_id,
+                    "state": state.get("state"),
+                    "attributes": {
+                        k: attrs.get(k)
+                        for k in ("friendly_name", "device_class", "unit_of_measurement", "current_temperature")
+                        if attrs.get(k) is not None
+                    },
+                    "area_id": entry.get("area_id") or device.get("area_id"),
+                    "device": device.get("name_by_user") or device.get("name"),
+                    "platform": entry.get("platform"),
+                    "excluded_by": excluded_by,
+                }
+            )
+        areas = [{"area_id": a.get("area_id"), "name": a.get("name")} for a in self.areas]
+        return {"entities": items, "areas": areas}
 
     def _on_state_changed(self, event: dict) -> None:
         data = event.get("data") or {}
@@ -448,6 +536,7 @@ class HomeAssistant:
                 "area_id": entry.get("area_id"),
                 "device_id": entry.get("device_id"),
                 "name": entry.get("name") or entry.get("original_name"),
+                "platform": entry.get("platform"),
             }
             if entry.get("device_id"):
                 device_ids.add(entry["device_id"])
@@ -457,6 +546,7 @@ class HomeAssistant:
                 "name": d.get("name_by_user") or d.get("name"),
                 "manufacturer": d.get("manufacturer"),
                 "model": d.get("model"),
+                "entry_type": d.get("entry_type"),
             }
             for device_id, d in self.devices.items()
             if device_id in device_ids
@@ -642,15 +732,18 @@ async def ingress_only(request: web.Request, handler):
 
 
 class Server:
-    def __init__(self, options: dict[str, Any]):
+    def __init__(self, options: dict[str, Any], settings: dict[str, Any]):
         self.options = options
         self.clients: set[web.WebSocketResponse] = set()
-        self.ha = HomeAssistant(options, self.broadcast)
+        self.ha = HomeAssistant(options, settings, self.broadcast)
         self.demo = bool(options.get("demo_mode")) or not HA_TOKEN
+        self._settings_lock = asyncio.Lock()
 
     def public_options(self) -> dict[str, Any]:
         keys = [k for k in DEFAULT_OPTIONS if k not in ("log_level",)]
-        return {k: self.options.get(k) for k in keys}
+        public = {k: self.options.get(k) for k in keys}
+        public["exclude_entities"] = sorted(self.ha.excluded)
+        return public
 
     async def broadcast(self, message: dict) -> None:
         if not self.clients:
@@ -705,6 +798,37 @@ class Server:
             return web.json_response({"error": str(err), "forecast": []}, status=200)
         return web.json_response({"forecast": forecast})
 
+    async def api_entities(self, _request: web.Request) -> web.Response:
+        if self.demo:
+            return web.json_response({"error": "demo mode"}, status=409)
+        if not self.ha.connected.is_set():
+            return web.json_response({"error": "Home Assistant not connected yet"}, status=503)
+        return web.json_response(self.ha.entity_catalog())
+
+    async def api_settings(self, request: web.Request) -> web.Response:
+        # A JSON body plus a custom header cannot be sent cross-site without a
+        # CORS preflight, which this app never answers (CSRF protection).
+        if request.content_type != "application/json" or request.headers.get("X-ClimatePlus") != "1":
+            raise web.HTTPBadRequest(text="JSON request with X-ClimatePlus header required")
+        if request.content_length is not None and request.content_length > 256_000:
+            raise web.HTTPRequestEntityTooLarge(max_size=256_000, actual_size=request.content_length)
+        try:
+            body = await request.json()
+            excluded = clean_entity_ids(body.get("exclude_entities"))
+        except (ValueError, AttributeError) as err:
+            return web.json_response({"error": str(err)}, status=400)
+        # Entities hidden in the app configuration stay managed there.
+        excluded = [e for e in excluded if e not in self.ha.option_excluded]
+        async with self._settings_lock:
+            try:
+                save_settings({"exclude_entities": excluded})
+            except OSError as err:
+                _LOGGER.error("Could not save settings: %s", err)
+                return web.json_response({"error": "could not save settings"}, status=500)
+            await self.ha.set_app_excluded(excluded)
+        _LOGGER.info("Hidden entities updated (%d hidden from the dashboard)", len(excluded))
+        return web.json_response({"ok": True, "exclude_entities": excluded})
+
     async def api_ws(self, request: web.Request) -> web.WebSocketResponse:
         ws = web.WebSocketResponse(heartbeat=30)
         await ws.prepare(request)
@@ -727,6 +851,8 @@ class Server:
         application.router.add_get("/api/bootstrap", self.api_bootstrap)
         application.router.add_get("/api/series", self.api_series)
         application.router.add_get("/api/forecast", self.api_forecast)
+        application.router.add_get("/api/entities", self.api_entities)
+        application.router.add_put("/api/settings", self.api_settings)
         application.router.add_get("/api/ws", self.api_ws)
         application.router.add_get("/api/health", self.health)
         application.router.add_static("/", STATIC_DIR, show_index=False, append_version=False)
@@ -740,7 +866,7 @@ async def main() -> None:
         format="%(asctime)s %(levelname)s (%(name)s) %(message)s",
     )
     logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
-    server = Server(options)
+    server = Server(options, load_settings())
     runner = web.AppRunner(server.app())
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()

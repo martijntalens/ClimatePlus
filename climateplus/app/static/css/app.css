@@ -344,6 +344,50 @@ a.tbar:hover { background: var(--surface-2); }
 .rm-stats { display: flex; gap: 14px; font-size: 13px; color: var(--text-2); }
 .rm-stats b { color: var(--text); }
 
+/* Entities without an area --------------------------------------------- */
+.ua-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+.ua-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); min-width: 0; }
+.ua-row > .ic { color: var(--text-2); }
+.ua-name { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.ua-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ua-val { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ua-more { margin-top: 8px; }
+.ua-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.ua-card .card-head { margin-bottom: 4px; }
+.ua-card > p { margin: 0 0 12px; }
+
+/* Settings -------------------------------------------------------------- */
+.icon-btn.active { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.settings > p { margin: -4px 0 14px; max-width: 760px; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent); filter: brightness(1.08); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.btn-link { background: none; border: 0; padding: 4px 2px; cursor: pointer; color: var(--info-text); font-size: 13px; font-weight: 600; }
+.btn-link:hover { text-decoration: underline; }
+.pick-group { margin-bottom: 18px; }
+.pick-group-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.pick-group-head h3 { display: flex; align-items: center; gap: 8px; }
+.pick { display: grid; grid-template-columns: 28px minmax(0, 1.4fr) minmax(0, 1fr) 90px auto; align-items: center; gap: 12px; padding: 8px 4px; border-radius: 10px; cursor: pointer; }
+.pick:hover { background: var(--surface-2); }
+.pick-ic { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--surface-2); color: var(--text-2); }
+.pick-ic .ic { width: 16px; height: 16px; }
+.pick-main { display: flex; flex-direction: column; min-width: 0; }
+.pick-main > span, .pick-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pick-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); white-space: nowrap; min-width: 110px; }
+.pick-toggle input { width: 17px; height: 17px; accent-color: var(--accent); margin: 0; cursor: pointer; }
+.pick.is-hidden .pick-main, .pick.is-hidden .pick-meta, .pick.is-hidden .pick-val, .pick.is-hidden .pick-ic { opacity: .45; }
+.pick.is-hidden .pick-name { text-decoration: line-through; }
+.pick.is-hidden .pick-toggle { color: var(--text); font-weight: 600; }
+.pick.locked { cursor: default; }
+.pick.locked input { cursor: default; }
+.savebar { position: sticky; bottom: 12px; z-index: 10; display: none; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 10px 12px 10px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: 0 8px 28px rgba(11, 11, 11, .16); font-weight: 600; }
+.savebar.show { display: flex; }
+.savebar-actions { display: flex; gap: 8px; }
+.msg { display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 14px; border-radius: 12px; font-size: 14px; }
+.msg-good { background: rgba(12, 163, 12, .10); color: var(--good-text); }
+.msg-critical { background: rgba(208, 59, 59, .10); color: var(--critical-text); }
+
 .foot { text-align: center; color: var(--muted); font-size: 12px; padding: 18px 0 6px; }
 
 /* Responsive ------------------------------------------------------------ */
@@ -366,7 +410,14 @@ a.tbar:hover { background: var(--surface-2); }
   .vent-row { grid-template-columns: 1fr 70px; }
   .vent-row .vent-bars { grid-column: 1 / -1; grid-row: 2; }
   .tbar { grid-template-columns: 90px 1fr 56px; gap: 8px; }
-  .search { min-width: 0; width: 100%; }
+  .search { min-width: 0; width: 100%; flex: 1 1 100%; max-width: none; }
+  .pick { grid-template-columns: 28px minmax(0, 1fr) auto; grid-template-areas: "ic main val" "ic meta toggle"; row-gap: 2px; }
+  .pick-ic { grid-area: ic; align-self: start; }
+  .pick-main { grid-area: main; }
+  .pick-meta { grid-area: meta; }
+  .pick-val { grid-area: val; }
+  .pick-toggle { grid-area: toggle; min-width: 0; justify-content: flex-end; }
+  .ua-list { grid-template-columns: minmax(0, 1fr); }
   .hm { grid-template-columns: 54px repeat(24, minmax(8px, 1fr)); gap: 1px; }
   .hm-cell { height: 18px; border-radius: 2px; }
 }

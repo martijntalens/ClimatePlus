@@ -21,7 +21,7 @@ and shows the areas per floor.
 | Thermostats | `climate` entities (current temperature, target, heating state) |
 | Windows & doors | `binary_sensor` with device class `window`, `door`, `opening` or `garage_door` |
 | Lights, fans, humidifiers | `light`, `fan`, `humidifier` entities |
-| Outdoor | Areas or entities named e.g. *Buiten, Tuin, Balkon, Terras, Outdoor, Garden*; otherwise the weather entity |
+| Outdoor | Areas or entities named e.g. *Buiten, Tuin, Balkon, Terras, Outdoor, Garden*, and sensors of weather services without an area (Buienradar, Met.no, OpenWeatherMap, …); otherwise the weather entity |
 | Weather & sun | `weather.*` (prefers `weather.home`/`weather.forecast_*`) and `sun.sun` |
 | Batteries | Battery sensors of devices that also have a climate sensor |
 
@@ -29,6 +29,26 @@ Diagnostic entities (for example a router's CPU temperature) and boiler water
 pressure sensors are ignored. If an area has a **temperature/humidity sensor
 selected in its area settings**, that sensor is used as the primary sensor for
 the room.
+
+### Entities without an area
+
+Entities that are not assigned to an area (neither the entity nor its device),
+for example your phone's light and pressure sensors, are shown in a separate
+**No area** list. They are shown one by one: they are **not** averaged, not
+scored and not included in the house figures or advice. Assign them to an area
+in Home Assistant, or hide them on the settings page.
+
+## Hiding entities
+
+Open the **settings page** (gear icon at the top right) and tick the entities
+you do not want to see. Use the search box or the *No area* filter to find them
+quickly, then press **Save**. Hidden entities disappear from every view, chart
+and piece of advice. The selection is stored by the app in its own data folder;
+nothing changes in Home Assistant.
+
+Entities listed in the `exclude_entities` option are hidden as well. They are
+shown as *Via configuration* on the settings page and can only be changed in the
+app configuration.
 
 ## Options
 
@@ -44,7 +64,7 @@ the room.
 | `weather_entity` | – | Weather entity to use (auto-detected when empty). |
 | `outdoor_temperature_entity` | – | Sensor that overrides the outdoor temperature. |
 | `outdoor_humidity_entity` | – | Sensor that overrides the outdoor humidity. |
-| `exclude_entities` | `[]` | Entity IDs to hide from the dashboard. |
+| `exclude_entities` | `[]` | Entity IDs to hide from the dashboard. Usually easier on the settings page (see *Hiding entities*). |
 | `demo_mode` | `false` | Show generated demo data instead of your own sensors. |
 | `log_level` | `info` | `debug`, `info`, `warning` or `error`. |
 
@@ -83,7 +103,11 @@ exclude_entities:
 - Only reachable through Home Assistant ingress (requires a logged-in Home
   Assistant user). The app exposes no ports and rejects requests that do not
   come from the ingress proxy.
-- Read-only use of the Home Assistant API; it does not control devices.
+- Read-only use of the Home Assistant API; it does not control devices or
+  change anything in Home Assistant. The only thing the app writes is its own
+  list of hidden entities (`/data/settings.json`, entity IDs only).
+- Changing settings requires a JSON request with a custom header, which a
+  different website cannot send through your browser (CSRF protection).
 - No external network requests; all assets are bundled.
 
 ## Troubleshooting

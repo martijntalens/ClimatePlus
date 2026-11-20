@@ -54,7 +54,9 @@
     up: '<path d="M7 17L17 7M9 7h8v8"/>',
     down: '<path d="M7 7l10 10M17 9v8H9"/>',
     flat: '<path d="M4 12h16M14 6l6 6-6 6"/>',
-    contrast: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>'
+    contrast: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    eyeoff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24M1 1l22 22"/>'
   };
   const icon = (name, cls) => '<svg class="ic ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || ICONS.info) + '</svg>';
   CP.icon = icon;
@@ -88,6 +90,7 @@
     heat: { entity: null, days: 14 },
     room: { range: '24h' },
     sensors: { q: '', filter: 'all' },
+    settings: { q: '', filter: 'all', catalog: null, draft: null, saving: false, message: null },
     cache: {},
     dirty: false,
     theme: store.get('theme') || 'auto'
@@ -228,7 +231,7 @@
       '<header class="top">' +
       '<a class="brand" href="#/overview"><span class="logo">' + logoSvg() + '</span><span><span class="brand-name">ClimatePlus</span><span class="brand-sub">' + esc(loc || 'Home Assistant') + '</span></span></a>' +
       '<nav class="tabs" aria-label="ClimatePlus">' + NAV.map(([v, ic]) => '<a href="#/' + v + '" data-view="' + v + '">' + icon(ic) + '<span>' + esc(t('nav.' + v)) + '</span></a>').join('') + '</nav>' +
-      '<div class="top-right"><span id="status" class="pill"></span><button id="theme-btn" class="icon-btn" type="button">' + icon('contrast') + '</button></div>' +
+      '<div class="top-right"><span id="status" class="pill"></span><a id="settings-btn" class="icon-btn" href="#/settings" title="' + esc(t('nav.settings')) + '" aria-label="' + esc(t('nav.settings')) + '">' + icon('settings') + '</a><button id="theme-btn" class="icon-btn" type="button">' + icon('contrast') + '</button></div>' +
       '</header>' +
       '<div id="banner"></div>' +
       '<main id="main" tabindex="-1"><div class="loading"><div class="spinner"></div>' + esc(t('loading')) + '</div></main>' +
@@ -249,6 +252,8 @@
   function markNav() {
     const v = S.route.view === 'room' ? 'overview' : S.route.view;
     document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === v));
+    const gear = document.getElementById('settings-btn');
+    if (gear) gear.classList.toggle('active', v === 'settings');
   }
   function updateStatus() {
     const el = document.getElementById('status');
@@ -370,9 +375,15 @@
   /* ------------------------------------------------------------------ */
   function route() {
     const parts = (location.hash || '#/overview').replace(/^#\/?/, '').split('/');
-    const view = ['overview', 'trends', 'heatmap', 'comfort', 'sensors', 'room'].indexOf(parts[0]) >= 0 ? parts[0] : 'overview';
+    const view = ['overview', 'trends', 'heatmap', 'comfort', 'sensors', 'room', 'settings'].indexOf(parts[0]) >= 0 ? parts[0] : 'overview';
     const prev = S.route.view + (S.route.id || '');
     S.route = { view, id: parts[1] ? decodeURIComponent(parts[1]) : null };
+    if (view === 'settings' && prev.indexOf('settings') !== 0) {
+      S.settings.filter = S.route.id === 'unassigned' ? 'unassigned' : S.route.id === 'hidden' ? 'hidden' : 'all';
+      S.settings.catalog = null;
+      S.settings.draft = null;
+      S.settings.message = null;
+    }
     markNav();
     renderView();
     if (prev !== S.route.view + (S.route.id || '')) window.scrollTo(0, 0);
@@ -386,6 +397,7 @@
     else if (v === 'comfort') viewComfort();
     else if (v === 'sensors') viewSensors();
     else if (v === 'room') viewRoom(live);
+    else if (v === 'settings') viewSettings();
   }
 
   /* ------------------------------------------------------------------ */
@@ -427,7 +439,7 @@
     const h = ev.house;
     const o = m.opts;
     if (!ev.rooms.length) {
-      main().innerHTML = card('', '<div class="empty-state">' + icon('home', 'big') + '<h2>' + esc(t('rooms')) + '</h2><p>' + esc(t('room.no_sensors')) + '</p></div>');
+      main().innerHTML = card('', '<div class="empty-state">' + icon('home', 'big') + '<h2>' + esc(t('rooms')) + '</h2><p>' + esc(t(ev.unassigned ? 'rooms.none_assigned' : 'room.no_sensors')) + '</p></div>') + (ev.unassigned ? unassignedCard(ev.unassigned) : '');
       return;
     }
     // indoor average series from sparklines
@@ -510,6 +522,7 @@
       if (g.name && groups.length > 1) html += '<h3 class="floor-title">' + esc(g.name) + '</h3>';
       html += '<div class="rooms">' + g.rooms.map(roomCard).join('') + '</div>';
     });
+    if (ev.unassigned) html += unassignedCard(ev.unassigned);
 
     // indoor vs outdoor
     html += card('', cardHead(t('indoor_vs_outdoor')) + '<div id="io-legend"></div><div id="io-chart" class="chart-box">' + (S.spark ? '' : loadingBox(240)) + '</div>');
@@ -608,6 +621,26 @@
       '<div class="rc-spark">' + (tSpark ? CP.charts.sparkline(tSpark.t, tSpark.v, slotColor(r.slot), { minSpan: 1 }) : '') + '</div>' +
       (badges.length ? '<div class="rc-badges">' + badges.join('') + '</div>' : '') +
       '</a>';
+  }
+
+  /** Entities without an area: one row per sensor, no averages and no score. */
+  function unassignedRows(u, limit) {
+    const m = S.model;
+    const rows = [];
+    u.sensors.forEach((s) => rows.push([C.METRICS[s.metric].icon, s.id, s.device, F.metric(s.metric, s.value, m)]));
+    u.thermostats.forEach((th) => rows.push(['thermo', th.id, null, F.temp(th.current, m)]));
+    const r = u.room;
+    r.openings.forEach((e) => rows.push(['window', e, null, m.states[e] && m.states[e].state === 'on' ? t('open') : t('closed')]));
+    r.lights.concat(r.fans, r.humidifiers).forEach((e) => rows.push([e.startsWith('fan.') ? 'fan' : e.startsWith('humidifier.') ? 'drop' : 'bulb', e, null, m.states[e] && m.states[e].state === 'on' ? t('on') : t('off')]));
+    const shown = limit ? rows.slice(0, limit) : rows;
+    return '<div class="ua-list">' + shown.map(([ic, id, dev, val]) =>
+      '<div class="ua-row">' + icon(ic) + '<span class="ua-name"><span>' + esc(C.displayName(m, id)) + '</span><span class="muted small">' + esc(dev || id) + '</span></span><b class="ua-val">' + esc(val) + '</b></div>').join('') + '</div>' +
+      (rows.length > shown.length ? '<div class="muted small ua-more">' + esc(t('and_more', { n: rows.length - shown.length })) + '</div>' : '');
+  }
+  function unassignedCard(u) {
+    return card('ua-card', cardHead(t('unassigned'), '<span class="count">' + u.count + '</span>') +
+      '<p class="muted small">' + esc(t('unassigned.hint')) + '</p>' + unassignedRows(u, 6) +
+      '<div class="ua-actions"><a class="btn btn-ghost" href="#/room/_none">' + icon('chart') + esc(t('unassigned.view')) + '</a><a class="btn btn-ghost" href="#/settings/unassigned">' + icon('eyeoff') + esc(t('unassigned.manage')) + '</a></div>');
   }
 
   /* ------------------------------------------------------------------ */
@@ -744,7 +777,7 @@
   function heatmapOptions() {
     const m = S.model;
     const groups = [];
-    m.roomList.concat(m.outdoorRooms).forEach((r) => {
+    m.roomList.concat(m.outdoorRooms, m.unassigned ? [m.unassigned] : []).forEach((r) => {
       const ids = [];
       C.METRIC_ORDER.forEach((k) => (r.sensors[k] || []).forEach((e) => ids.push(e)));
       if (!r.sensors.temperature && r.primary.temperature) ids.unshift(r.primary.temperature);
@@ -948,7 +981,8 @@
   /* ------------------------------------------------------------------ */
   async function viewRoom(live) {
     const m = S.model;
-    const x = S.ev.rooms.find((r) => r.room.id === S.route.id);
+    const unassigned = S.route.id === '_none' ? S.ev.unassigned : null;
+    const x = unassigned || S.ev.rooms.find((r) => r.room.id === S.route.id);
     const root = main();
     if (!x) { root.innerHTML = card('', '<a class="back" href="#/overview">' + icon('back') + esc(t('room.back')) + '</a><div class="empty">' + esc(t('room.not_found')) + '</div>'); return; }
     const r = x.room;
@@ -958,20 +992,26 @@
     const savedCharts = keepCharts ? document.getElementById('rm-charts') : null;
 
     let html = '<a class="back" href="#/overview">' + icon('back') + esc(t('room.back')) + '</a>';
-    html += '<div class="room-hero card"><div class="rh-title"><h1>' + esc(r.name) + '</h1><div class="muted">' + esc(floorName(r)) + '</div></div>' +
-      '<div class="rh-score">' + CP.charts.ring(x.score, { size: 92, stroke: 9 }) + '<div>' + scoreTag(x.score) + '<div class="muted small">' + esc(t('room.breakdown')) + '</div>' +
-      ['temperature', 'humidity', 'air'].filter((k) => x.parts[k] != null).map((k) => '<div class="mini-bar"><span>' + esc(t('score.part.' + k)) + '</span><div class="mb-track"><div class="mb-fill" style="width:' + x.parts[k] + '%;background:' + C.scales.score(x.parts[k]) + '"></div></div><b>' + x.parts[k] + '</b></div>').join('') + '</div></div></div>';
+    if (unassigned) {
+      html += '<div class="room-hero card"><div class="rh-title"><h1>' + esc(r.name) + '</h1><p class="muted">' + esc(t('unassigned.detail')) + '</p></div>' +
+        '<a class="btn btn-ghost" href="#/settings/unassigned">' + icon('eyeoff') + esc(t('unassigned.manage')) + '</a></div>';
+      html += card('', cardHead(t('unassigned.entities'), '<span class="count">' + x.count + '</span>') + unassignedRows(x));
+    } else {
+      html += '<div class="room-hero card"><div class="rh-title"><h1>' + esc(r.name) + '</h1><div class="muted">' + esc(floorName(r)) + '</div></div>' +
+        '<div class="rh-score">' + CP.charts.ring(x.score, { size: 92, stroke: 9 }) + '<div>' + scoreTag(x.score) + '<div class="muted small">' + esc(t('room.breakdown')) + '</div>' +
+        ['temperature', 'humidity', 'air'].filter((k) => x.parts[k] != null).map((k) => '<div class="mini-bar"><span>' + esc(t('score.part.' + k)) + '</span><div class="mb-track"><div class="mb-fill" style="width:' + x.parts[k] + '%;background:' + C.scales.score(x.parts[k]) + '"></div></div><b>' + x.parts[k] + '</b></div>').join('') + '</div></div></div>';
 
-    // metric tiles
-    const tiles = [];
-    C.METRIC_ORDER.forEach((k) => {
-      if (x.values[k] == null) return;
-      tiles.push('<div class="tile">' + icon(C.METRICS[k].icon) + '<div class="tile-label">' + esc(t('metric.' + k)) + '</div><div class="tile-value">' + esc(F.metric(k, x.values[k], m)) + '</div>' + (k === 'co2' ? statusTag(co2Level(x.values.co2), t(co2Level(x.values.co2) === 'good' ? 'score.good' : co2Level(x.values.co2) === 'warning' ? 'level.warning' : 'score.poor')) : '') + '</div>');
-    });
-    if (x.dew != null) tiles.push('<div class="tile tile-derived">' + icon('drop') + '<div class="tile-label">' + esc(t('dewpoint')) + '</div><div class="tile-value">' + esc(F.temp(x.dew, m)) + '</div></div>');
-    if (x.ah != null) tiles.push('<div class="tile tile-derived">' + icon('cloud') + '<div class="tile-label">' + esc(t('abs_humidity')) + '</div><div class="tile-value">' + esc(F.num(x.ah, 1)) + ' g/m³</div></div>');
-    if (x.mold) tiles.push('<div class="tile tile-derived" title="' + esc(t('surface_rh_hint')) + '">' + icon('spore') + '<div class="tile-label">' + esc(t('mold')) + '</div><div class="tile-value">' + esc(x.srh != null ? F.num(x.srh, 0) + '%' : t('mold.' + x.mold)) + '</div>' + statusTag(x.mold === 'high' ? 'critical' : x.mold === 'elevated' ? 'warning' : 'good', t('mold.' + x.mold)) + '</div>');
-    html += tiles.length ? '<div class="tiles">' + tiles.join('') + '</div>' : card('', '<div class="empty">' + esc(t('room.no_sensors')) + '</div>');
+      // metric tiles
+      const tiles = [];
+      C.METRIC_ORDER.forEach((k) => {
+        if (x.values[k] == null) return;
+        tiles.push('<div class="tile">' + icon(C.METRICS[k].icon) + '<div class="tile-label">' + esc(t('metric.' + k)) + '</div><div class="tile-value">' + esc(F.metric(k, x.values[k], m)) + '</div>' + (k === 'co2' ? statusTag(co2Level(x.values.co2), t(co2Level(x.values.co2) === 'good' ? 'score.good' : co2Level(x.values.co2) === 'warning' ? 'level.warning' : 'score.poor')) : '') + '</div>');
+      });
+      if (x.dew != null) tiles.push('<div class="tile tile-derived">' + icon('drop') + '<div class="tile-label">' + esc(t('dewpoint')) + '</div><div class="tile-value">' + esc(F.temp(x.dew, m)) + '</div></div>');
+      if (x.ah != null) tiles.push('<div class="tile tile-derived">' + icon('cloud') + '<div class="tile-label">' + esc(t('abs_humidity')) + '</div><div class="tile-value">' + esc(F.num(x.ah, 1)) + ' g/m³</div></div>');
+      if (x.mold) tiles.push('<div class="tile tile-derived" title="' + esc(t('surface_rh_hint')) + '">' + icon('spore') + '<div class="tile-label">' + esc(t('mold')) + '</div><div class="tile-value">' + esc(x.srh != null ? F.num(x.srh, 0) + '%' : t('mold.' + x.mold)) + '</div>' + statusTag(x.mold === 'high' ? 'critical' : x.mold === 'elevated' ? 'warning' : 'good', t('mold.' + x.mold)) + '</div>');
+      html += tiles.length ? '<div class="tiles">' + tiles.join('') + '</div>' : card('', '<div class="empty">' + esc(t('room.no_sensors')) + '</div>');
+    }
 
     // devices
     const dev = [];
@@ -994,7 +1034,7 @@
       const v = C.num(m.states[e] && m.states[e].state);
       dev.push('<div class="dev">' + icon('battery', v != null && v < o.low_battery_percent ? 'ic-warn' : '') + '<div><div>' + esc(C.displayName(m, e)) + '</div></div><span class="dev-state">' + esc(v == null ? '–' : F.num(v, 0) + '%') + '</span></div>');
     });
-    if (dev.length) html += card('', cardHead(t('room.devices')) + '<div class="devs">' + dev.join('') + '</div>');
+    if (dev.length && !unassigned) html += card('', cardHead(t('room.devices')) + '<div class="devs">' + dev.join('') + '</div>');
 
     html += card('', cardHead(t('room.history'), chips('rrange', [['24h', t('range.24h')], ['7d', t('range.7d')], ['30d', t('range.30d')]], st.range)) + '<div id="rm-charts" data-room="' + esc(r.id) + '">' + loadingBox(260) + '</div>');
     root.innerHTML = html;
@@ -1021,7 +1061,7 @@
     r.openings.filter((e) => !m.entities[e].door).forEach((e) => ((data.series[e] && data.series[e].seg) || []).forEach((sg) => segs.push({ from: sg[0], to: sg[1], color: WINDOW_SEG, label: t('window_periods') + ' · ' + C.displayName(m, e) })));
     metrics.forEach((k) => {
       const list = r.sensors[k] || [r.primary[k]];
-      const series = list.map((id, i) => Object.assign({ name: C.shortName(m, id, r.name), color: list.length > 1 ? slotColor(i) : slotColor(r.slot) }, seriesDisplay(id, k, data.series[id]) || { t: [], v: [] }));
+      const series = list.map((id, i) => Object.assign({ name: C.shortName(m, id, r.name), color: list.length > 1 || r.slot == null ? slotColor(i) : slotColor(r.slot) }, seriesDisplay(id, k, data.series[id]) || { t: [], v: [] }));
       const wrap = document.createElement('div');
       wrap.className = 'rm-chart';
       const stats = series.length === 1 ? seriesStats(series[0]) : null;
@@ -1043,6 +1083,182 @@
       });
     });
     if (!metrics.length) box.innerHTML = '<div class="empty">' + esc(t('no_data')) + '</div>';
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Settings: entities hidden from the dashboard                        */
+  /* ------------------------------------------------------------------ */
+  function catalogInfo(item) {
+    const m = S.model;
+    const c = C.classify(item) || {};
+    const a = item.attributes || {};
+    const onOff = item.state === 'on' ? t('on') : item.state === 'off' ? t('off') : '–';
+    if (c.kind === 'sensor') return { ic: C.METRICS[c.metric].icon, type: t('metric.' + c.metric), value: F.metric(c.metric, C.sensorValue(item, c.metric), m) };
+    if (c.kind === 'battery') { const v = C.num(item.state); return { ic: 'battery', type: t('kind.battery'), value: v == null ? '–' : F.num(v, 0) + '%' }; }
+    if (c.kind === 'thermostat') return { ic: 'thermo', type: t('kind.thermostat'), value: F.temp(C.normalise('temperature', a.current_temperature, m.tempUnit), m) };
+    if (c.kind === 'opening') return { ic: 'window', type: t('kind.opening'), value: item.state === 'on' ? t('open') : item.state === 'off' ? t('closed') : '–' };
+    if (c.kind === 'weather') return { ic: 'cloudsun', type: t('kind.weather'), value: (WX_LABEL[CP.i18n.lang] || WX_LABEL.en)[item.state] || item.state };
+    if (c.kind === 'light') return { ic: 'bulb', type: t('kind.light'), value: onOff };
+    if (c.kind === 'fan') return { ic: 'fan', type: t('kind.fan'), value: onOff };
+    if (c.kind === 'humidifier') return { ic: 'drop', type: t('kind.humidifier'), value: onOff };
+    return { ic: 'info', type: item.entity_id.split('.')[0], value: item.state || '–' };
+  }
+
+  async function viewSettings() {
+    const st = S.settings;
+    const root = main();
+    root.innerHTML = card('settings', cardHead(t('settings.hidden'), '<span class="count" id="set-count"></span>') +
+      '<p class="muted">' + esc(t('settings.hidden_hint')) + '</p>' +
+      '<div id="set-msg"></div>' +
+      '<div class="controls"><input id="set-q" class="search" type="search" placeholder="' + esc(t('settings.search')) + '" value="' + esc(st.q) + '">' +
+      chips('sfilter', [['all', t('filter.all')], ['unassigned', t('unassigned')], ['hidden', t('settings.filter_hidden')]], st.filter) + '</div>' +
+      '<div id="set-list">' + loadingBox(240) + '</div>' +
+      '<div class="savebar" id="set-bar" role="status"><span id="set-changes"></span><span class="savebar-actions"><button type="button" class="btn btn-ghost" id="set-reset">' + esc(t('settings.cancel')) + '</button><button type="button" class="btn btn-primary" id="set-save">' + esc(t('settings.save')) + '</button></span></div>') +
+      card('', cardHead(t('settings.other')) + '<p class="muted small">' + esc(t('settings.other_hint')) + '</p>');
+    renderSettingsMessage();
+    document.getElementById('set-q').addEventListener('input', (e) => { st.q = e.target.value; renderSettingsList(); });
+    onChips(root, 'sfilter', (v) => {
+      st.filter = v;
+      root.querySelectorAll('[data-chips="sfilter"] .chip').forEach((b) => { b.classList.toggle('active', b.dataset.val === v); b.setAttribute('aria-pressed', b.dataset.val === v); });
+      renderSettingsList();
+    });
+    document.getElementById('set-reset').addEventListener('click', () => { st.draft = savedExcluded(); renderSettingsList(); });
+    document.getElementById('set-save').addEventListener('click', saveSettings);
+    document.getElementById('set-list').addEventListener('change', onSettingsToggle);
+    document.getElementById('set-list').addEventListener('click', onSettingsGroupToggle);
+
+    if (!st.catalog) {
+      try {
+        st.catalog = await CP.api.entities();
+      } catch (e) {
+        const list = document.getElementById('set-list');
+        if (list) list.innerHTML = '<div class="empty">' + esc(t('settings.load_error')) + '<span class="muted small">' + esc(e.message) + '</span></div>';
+        return;
+      }
+      if (S.route.view !== 'settings') return;
+    }
+    if (!st.draft) st.draft = savedExcluded();
+    renderSettingsList();
+  }
+  function savedExcluded() {
+    const c = S.settings.catalog;
+    return new Set(c ? c.entities.filter((e) => e.excluded_by === 'app').map((e) => e.entity_id) : []);
+  }
+  function settingsItems() {
+    const st = S.settings;
+    const areas = {};
+    (st.catalog.areas || []).forEach((a) => (areas[a.area_id] = a.name));
+    return st.catalog.entities.map((e) => {
+      const locked = e.excluded_by === 'options';
+      return Object.assign({}, e, catalogInfo(e), {
+        name: (e.attributes && e.attributes.friendly_name) || e.entity_id,
+        locked,
+        hidden: locked || st.draft.has(e.entity_id),
+        areaName: e.area_id ? areas[e.area_id] || e.area_id : null
+      });
+    });
+  }
+  function renderSettingsList() {
+    const st = S.settings;
+    const box = document.getElementById('set-list');
+    if (!box || !st.catalog || !st.draft) return;
+    const all = settingsItems();
+    const q = st.q.trim().toLowerCase();
+    const list = all
+      .filter((e) => st.filter === 'all' || (st.filter === 'unassigned' ? !e.areaName : e.hidden))
+      .filter((e) => !q || (e.name + ' ' + e.entity_id + ' ' + (e.areaName || t('unassigned')) + ' ' + (e.device || '') + ' ' + e.type).toLowerCase().indexOf(q) >= 0);
+    document.getElementById('set-count').textContent = t('settings.n_hidden', { n: all.filter((e) => e.hidden).length });
+    const groups = [];
+    list.forEach((e) => {
+      const key = e.areaName || '';
+      let g = groups.find((x) => x.key === key);
+      if (!g) { g = { key, name: e.areaName || t('unassigned'), items: [] }; groups.push(g); }
+      g.items.push(e);
+    });
+    // area-less entities first: that is where most clean-up happens
+    groups.sort((a, b) => (a.key === '' ? -1 : b.key === '' ? 1 : a.name.localeCompare(b.name)));
+    groups.forEach((g) => g.items.sort((a, b) => a.name.localeCompare(b.name)));
+    if (!groups.length) { box.innerHTML = '<div class="empty">' + esc(t(st.filter === 'hidden' && !q ? 'settings.none_hidden' : 'no_data')) + '</div>'; updateSaveBar(); return; }
+    box.innerHTML = groups.map((g) => {
+      const free = g.items.filter((e) => !e.locked);
+      const allHidden = free.length && free.every((e) => e.hidden);
+      return '<div class="pick-group"><div class="pick-group-head"><h3>' + esc(g.name) + ' <span class="count">' + g.items.length + '</span></h3>' +
+        (free.length > 1 ? '<button type="button" class="btn-link" data-group="' + esc(g.key) + '" data-hide="' + (allHidden ? '0' : '1') + '">' + esc(t(allHidden ? 'settings.show_all' : 'settings.hide_all')) + '</button>' : '') + '</div>' +
+        g.items.map((e) =>
+          '<label class="pick' + (e.hidden ? ' is-hidden' : '') + (e.locked ? ' locked' : '') + '">' +
+          '<span class="pick-ic">' + icon(e.ic) + '</span>' +
+          '<span class="pick-main"><span class="pick-name">' + esc(e.name) + '</span><span class="mono">' + esc(e.entity_id) + '</span></span>' +
+          '<span class="pick-meta muted small">' + esc([e.type, e.device].filter(Boolean).join(' · ')) + '</span>' +
+          '<span class="pick-val">' + esc(e.value) + '</span>' +
+          '<span class="pick-toggle"' + (e.locked ? ' title="' + esc(t('settings.locked_hint')) + '"' : '') + '><input type="checkbox" data-id="' + esc(e.entity_id) + '"' + (e.hidden ? ' checked' : '') + (e.locked ? ' disabled' : '') + '><span>' + esc(t(e.locked ? 'settings.locked' : 'settings.hide')) + '</span></span>' +
+          '</label>').join('') + '</div>';
+    }).join('');
+    updateSaveBar();
+  }
+  function onSettingsToggle(e) {
+    const cb = e.target.closest('input[type=checkbox][data-id]');
+    if (!cb) return;
+    const st = S.settings;
+    if (cb.checked) st.draft.add(cb.dataset.id); else st.draft.delete(cb.dataset.id);
+    cb.closest('.pick').classList.toggle('is-hidden', cb.checked);
+    if (st.filter === 'hidden') return updateSaveBar(); // keep the row visible until the list is redrawn
+    renderSettingsList();
+  }
+  function onSettingsGroupToggle(e) {
+    const b = e.target.closest('[data-group]');
+    if (!b) return;
+    e.preventDefault();
+    const st = S.settings;
+    const q = st.q.trim().toLowerCase();
+    settingsItems()
+      .filter((x) => (x.areaName || '') === b.dataset.group && !x.locked)
+      .filter((x) => st.filter === 'all' || (st.filter === 'unassigned' ? !x.areaName : x.hidden))
+      .filter((x) => !q || (x.name + ' ' + x.entity_id + ' ' + (x.device || '') + ' ' + x.type).toLowerCase().indexOf(q) >= 0)
+      .forEach((x) => { if (b.dataset.hide === '1') st.draft.add(x.entity_id); else st.draft.delete(x.entity_id); });
+    renderSettingsList();
+  }
+  function settingsChanges() {
+    const st = S.settings;
+    if (!st.draft || !st.catalog) return 0;
+    const saved = savedExcluded();
+    let n = 0;
+    st.draft.forEach((id) => { if (!saved.has(id)) n++; });
+    saved.forEach((id) => { if (!st.draft.has(id)) n++; });
+    return n;
+  }
+  function updateSaveBar() {
+    const bar = document.getElementById('set-bar');
+    if (!bar) return;
+    const n = settingsChanges();
+    bar.classList.toggle('show', n > 0 || S.settings.saving);
+    document.getElementById('set-changes').textContent = S.settings.saving ? t('settings.saving') : t(n === 1 ? 'settings.one_change' : 'settings.n_changes', { n });
+    document.getElementById('set-save').disabled = S.settings.saving || n === 0;
+    document.getElementById('set-reset').disabled = S.settings.saving;
+  }
+  function renderSettingsMessage() {
+    const el = document.getElementById('set-msg');
+    const msg = S.settings.message;
+    if (el) el.innerHTML = msg ? '<div class="msg msg-' + msg.level + '">' + icon(msg.level === 'good' ? 'check' : 'alert') + esc(msg.text) + '</div>' : '';
+  }
+  async function saveSettings() {
+    const st = S.settings;
+    if (st.saving || !settingsChanges()) return;
+    st.saving = true;
+    updateSaveBar();
+    try {
+      const res = await CP.api.saveExcluded(Array.from(st.draft).sort());
+      const n = (res.exclude_entities || []).length;
+      st.message = { level: 'good', text: t('settings.saved', { n }) };
+      st.catalog = null;
+      st.draft = null;
+      st.saving = false;
+      await load(); // redraws the dashboard and this page with the new selection
+    } catch (e) {
+      st.saving = false;
+      st.message = { level: 'critical', text: t('settings.save_error') + ' ' + e.message };
+      renderSettingsMessage();
+      updateSaveBar();
+    }
   }
 
   /* ------------------------------------------------------------------ */

@@ -28,6 +28,9 @@
   Object.keys(METRICS).forEach((m) => METRICS[m].classes.forEach((c) => (CLASS_TO_METRIC[c] = m)));
   const PRESSURE_UNITS = ['hPa', 'mbar', 'kPa', 'inHg', 'mmHg'];
   const OUTDOOR_RE = /(^|[\s_.-])(buiten|outdoor|outside|exterior|garden|tuin|achtertuin|voortuin|balkon|balcony|terras|terrace|patio|yard|dakterras)([\s_.-]|$)/i;
+  // Integrations that report outdoor weather / outdoor air quality. Their sensors
+  // without an area belong to "Outdoor", not to an indoor room.
+  const WEATHER_PLATFORMS = new Set(['buienradar', 'met', 'met_eireann', 'openweathermap', 'accuweather', 'pirateweather', 'knmi', 'weatherflow', 'weatherflow_cloud', 'tomorrowio', 'meteo_france', 'metoffice', 'open_meteo', 'smhi', 'nws', 'environment_canada', 'ipma', 'aemet', 'bom', 'brightsky', 'weatherkit', 'google_weather', 'luchtmeetnet', 'waqi', 'airvisual', 'airly', 'airnow', 'openuv']);
 
   function classify(st) {
     const id = st.entity_id;
@@ -179,6 +182,14 @@
       return rooms[id];
     }
 
+    // devices that also expose a weather entity are weather services
+    const weatherDevices = new Set();
+    Object.keys(states).forEach((eid) => {
+      if (eid.startsWith('weather.') && registry[eid] && registry[eid].device_id) weatherDevices.add(registry[eid].device_id);
+    });
+    const isWeatherSource = (reg, dev) =>
+      WEATHER_PLATFORMS.has(reg.platform) || dev.entry_type === 'service' || (reg.device_id != null && weatherDevices.has(reg.device_id));
+
     Object.keys(states).forEach((eid) => {
       if (excluded.has(eid)) return;
       const st = states[eid];
@@ -191,7 +202,7 @@
       let roomId = reg.area_id || dev.area_id || null;
       const fname = (st.attributes && st.attributes.friendly_name) || eid;
       if (eid === opts.outdoor_temperature_entity || eid === opts.outdoor_humidity_entity) roomId = roomId && areas[roomId] && OUTDOOR_RE.test(areas[roomId].name) ? roomId : '_outdoor';
-      if (!roomId) roomId = OUTDOOR_RE.test(fname + ' ' + eid) ? '_outdoor' : '_none';
+      if (!roomId) roomId = OUTDOOR_RE.test(fname + ' ' + eid) || (c.kind === 'sensor' && isWeatherSource(reg, dev)) ? '_outdoor' : '_none';
       const r = room(roomId);
       entities[eid] = { id: eid, kind: c.kind, metric: c.metric, door: !!c.door, roomId, deviceId: reg.device_id || null, device: dev };
       if (c.kind === 'sensor') (r.sensors[c.metric] = r.sensors[c.metric] || []).push(eid);
@@ -225,10 +236,13 @@
       const f = floors[r.floorId];
       return f && f.level != null ? f.level : 999;
     };
-    const all = Object.values(rooms).filter(isClimateRoom);
+    // Entities without an area are listed separately: averaging unrelated sensors
+    // (a phone, a NAS, a weather service) would distort the house figures.
+    const unassigned = rooms._none || null;
+    const all = Object.values(rooms).filter((r) => r.id !== '_none' && isClimateRoom(r));
     const indoor = all
       .filter((r) => !r.outdoor)
-      .sort((a, b) => (a.id === '_none') - (b.id === '_none') || floorLevel(a) - floorLevel(b) || a.name.localeCompare(b.name));
+      .sort((a, b) => floorLevel(a) - floorLevel(b) || a.name.localeCompare(b.name));
     const outdoor = all.filter((r) => r.outdoor).sort((a, b) => (a.id === '_outdoor') - (b.id === '_outdoor') || a.name.localeCompare(b.name));
     indoor.forEach((r, i) => (r.slot = i)); // stable colour slot follows the room
 
@@ -242,6 +256,7 @@
       rooms,
       roomList: indoor,
       outdoorRooms: outdoor,
+      unassigned,
       entities,
       floors,
       weather,
@@ -349,7 +364,7 @@
     const by = (list, m, dir) => list.slice().sort((a, b) => dir * (a.values[m] - b.values[m]))[0] || null;
     const lightsOn = model.allLights.filter((e) => model.states[e] && model.states[e].state === 'on');
     const openings = [];
-    model.roomList.concat(model.outdoorRooms).forEach((r) => r.openings.forEach((e) => { if (model.states[e] && model.states[e].state === 'on') openings.push(e); }));
+    model.roomList.concat(model.outdoorRooms, model.unassigned ? [model.unassigned] : []).forEach((r) => r.openings.forEach((e) => { if (model.states[e] && model.states[e].state === 'on') openings.push(e); }));
 
     const house = {
       temperature: avg(withT.map((x) => x.values.temperature)),
@@ -368,9 +383,31 @@
     house.dew = dewPoint(house.temperature, house.humidity);
     house.ah = absHumidity(house.temperature, house.humidity);
 
-    const result = { rooms, house, outdoor, sun: sunInfo(model) };
+    const result = { rooms, house, outdoor, sun: sunInfo(model), unassigned: unassignedInfo(model) };
     result.insights = insights(model, result);
     return result;
+  }
+
+  /** Entities without an area: listed one by one, never averaged or scored. */
+  function unassignedInfo(model) {
+    const r = model.unassigned;
+    if (!r) return null;
+    const sensors = [];
+    METRIC_ORDER.forEach((m) => (r.sensors[m] || []).forEach((id) => {
+      const e = model.entities[id];
+      sensors.push({ id, metric: m, value: sensorValue(model.states[id], m), device: (e && e.device && e.device.name) || null });
+    }));
+    const thermostats = r.thermostats.map((e) => thermostatInfo(model, e));
+    const others = r.openings.length + r.lights.length + r.fans.length + r.humidifiers.length;
+    if (!sensors.length && !thermostats.length && !others) return null;
+    return {
+      room: r,
+      sensors,
+      thermostats,
+      openOpenings: r.openings.filter((e) => model.states[e] && model.states[e].state === 'on'),
+      lightsOn: r.lights.filter((e) => model.states[e] && model.states[e].state === 'on'),
+      count: sensors.length + thermostats.length + others
+    };
   }
 
   function outdoorValues(model) {
@@ -493,6 +530,9 @@
     if (lowBat.length) {
       const devNames = lowBat.slice(0, 3).map((h) => ((h.entity.device && h.entity.device.name) || displayName(model, h.id)) + ' (' + F.num(h.battery, 0) + '%)');
       add('warning', 'battery', 'battery', { names: devNames.join(', ') + (lowBat.length > 3 ? ' ' + t('and_more', { n: lowBat.length - 3 }) : '') });
+    }
+    if (ev.unassigned && ev.unassigned.sensors.length) {
+      add('info', 'list', 'unassigned', { n: ev.unassigned.sensors.length }, '_none');
     }
 
     const order = { critical: 0, warning: 1, info: 2, good: 3 };

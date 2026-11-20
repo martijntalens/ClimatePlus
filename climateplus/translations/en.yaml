@@ -37,7 +37,7 @@ configuration:
     description: Optional sensor that overrides the outdoor humidity.
   exclude_entities:
     name: Excluded entities
-    description: Entity IDs that should never appear in the dashboard.
+    description: Entity IDs that should never appear in the dashboard. Easier - use the settings page (gear icon) in ClimatePlus to pick entities from a list.
   demo_mode:
     name: Demo mode
     description: Show generated demo data instead of your own sensors.

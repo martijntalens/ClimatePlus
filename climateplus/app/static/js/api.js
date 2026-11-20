@@ -24,9 +24,35 @@
       const data = await getJson('api/bootstrap');
       if (data.demo) {
         this.demo = true;
-        return Object.assign(CP.demo.bootstrap(), { options: Object.assign(CP.demo.bootstrap().options, data.options), version: data.version });
+        const demo = CP.demo.bootstrap();
+        const hidden = demo.options.exclude_entities.concat((data.options && data.options.exclude_entities) || []);
+        demo.options = Object.assign(demo.options, data.options, { exclude_entities: hidden });
+        demo.version = data.version;
+        return demo;
       }
       return data;
+    },
+
+    /** All climate entities including hidden ones: { entities:[{entity_id,state,attributes,area_id,device,platform,excluded_by}], areas } */
+    async entities() {
+      if (this.demo) return CP.demo.entities();
+      return getJson('api/entities');
+    },
+
+    /** Store the entities hidden from the dashboard (kept by the app, not in Home Assistant). */
+    async saveExcluded(ids) {
+      if (this.demo) return CP.demo.saveExcluded(ids);
+      const res = await fetch('api/settings', {
+        method: 'PUT',
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-ClimatePlus': '1' },
+        body: JSON.stringify({ exclude_entities: ids })
+      });
+      let body = {};
+      try { body = await res.json(); } catch (e) { /* ignore */ }
+      if (!res.ok) throw new Error(body.error || res.status + ' ' + res.statusText);
+      return body;
     },
 
     /** q: { hours | start,end (ms), points } → { start, end, series:{id:{t,v,mn,mx,seg}} } */

@@ -106,6 +106,21 @@
     if (ROOMS[r].pm) add(r, 'pm25', 'µg/m³', 'pm25', room + ' PM2.5');
     if (ROOMS[r].outdoor) add(r, 'pressure', 'hPa', 'atmospheric_pressure', room + ' Luchtdruk');
   });
+  // Sensors without an area (a phone, a forgotten thermometer) and a weather service
+  [
+    { id: 'sensor.pixel_8_light_sensor', metric: 'illuminance', unit: 'lx', dc: 'illuminance', name: 'Pixel 8 Lichtsensor', dev: 'dev_pixel', devName: 'Pixel 8', platform: 'mobile_app', fn: (t) => 15 + daylight(t) * 0.012 + 40 * Math.max(0, noise('px', t, HOUR)) },
+    { id: 'sensor.pixel_8_pressure_sensor', metric: 'pressure', unit: 'hPa', dc: 'atmospheric_pressure', name: 'Pixel 8 Luchtdruk', dev: 'dev_pixel', devName: 'Pixel 8', platform: 'mobile_app', fn: (t) => 1011 + 9 * noise('press', t, 3 * DAY) },
+    { id: 'sensor.thermometer_hal_temperature', metric: 'temperature', unit: '°C', dc: 'temperature', name: 'Thermometer hal Temperatuur', dev: 'dev_hal', devName: 'Thermometer hal', platform: 'zha', fn: (t) => value('temperature', 'keuken', t) - 1.7 },
+    { id: 'sensor.thermometer_hal_humidity', metric: 'humidity', unit: '%', dc: 'humidity', name: 'Thermometer hal Luchtvochtigheid', dev: 'dev_hal', devName: 'Thermometer hal', platform: 'zha', fn: (t) => value('humidity', 'keuken', t) - 3 },
+    { id: 'sensor.buienradar_temperature', metric: 'temperature', unit: '°C', dc: 'temperature', name: 'Buienradar Temperatuur', dev: 'dev_buienradar', devName: 'Buienradar', platform: 'buienradar', service: true, fn: (t) => outdoorTemp(t) + 0.4 }
+  ].forEach((s) => SENSORS.push(Object.assign({ roomId: null }, s)));
+  const sensorValueAt = (s, t) => (s.fn ? s.fn(t) : value(s.metric, s.roomId, t));
+  const isStale = (s) => !!(s.roomId && ROOMS[s.roomId].stale);
+
+  // Hidden entities (the settings page); kept in this browser only
+  let excluded = [];
+  try { excluded = JSON.parse(localStorage.getItem('climateplus.demo_excluded') || '[]'); } catch (e) { excluded = []; }
+
   const dec = { temperature: 1, humidity: 0, co2: 0, illuminance: 0, voc: 0, pm25: 1, pressure: 1 };
   const round = (v, d) => (v == null ? null : Math.round(v * Math.pow(10, d)) / Math.pow(10, d));
 
@@ -118,7 +133,7 @@
 
   let boot = null;
   function bootstrap() {
-    if (boot) return JSON.parse(JSON.stringify(boot));
+    if (boot) return withExcluded(JSON.parse(JSON.stringify(boot)));
     const now = Date.now();
     const iso = (t) => new Date(t).toISOString();
     const states = [];
@@ -128,11 +143,13 @@
       states.push(Object.assign({ entity_id, state: String(state), attributes, last_changed: iso(now - 20 * 60000), last_updated: iso(now - 60000), last_reported: iso(now - 30000) }, extra || {}));
     };
     SENSORS.forEach((s) => {
-      const dev = 'dev_' + s.roomId;
-      devices[dev] = { area_id: s.roomId, name: 'Klimaatsensor ' + s.roomId, manufacturer: 'Aqara', model: 'TH-01' };
-      entities[s.id] = { area_id: null, device_id: dev, name: null };
-      const v = round(value(s.metric, s.roomId, now), dec[s.metric]);
-      const extra = ROOMS[s.roomId].stale ? { last_reported: iso(now - 9.5 * HOUR), last_updated: iso(now - 9.5 * HOUR), last_changed: iso(now - 9.5 * HOUR) } : null;
+      const dev = s.dev || 'dev_' + s.roomId;
+      devices[dev] = s.dev
+        ? { area_id: null, name: s.devName, manufacturer: null, model: null, entry_type: s.service ? 'service' : null }
+        : { area_id: s.roomId, name: 'Klimaatsensor ' + s.roomId, manufacturer: 'Aqara', model: 'TH-01' };
+      entities[s.id] = { area_id: null, device_id: dev, name: null, platform: s.platform || 'zha' };
+      const v = round(sensorValueAt(s, now), dec[s.metric]);
+      const extra = isStale(s) ?{ last_reported: iso(now - 9.5 * HOUR), last_updated: iso(now - 9.5 * HOUR), last_changed: iso(now - 9.5 * HOUR) } : null;
       st(s.id, v, { unit_of_measurement: s.unit, device_class: s.dc, state_class: 'measurement', friendly_name: s.name }, extra);
     });
     Object.keys(ROOMS).forEach((r, i) => {
@@ -186,7 +203,39 @@
       config: { location_name: 'Thuis', language: navigator.language, time_zone: 'Europe/Amsterdam', unit_system: { temperature: '°C' } },
       areas: AREAS, floors: FLOORS, devices, entities, states
     };
-    return JSON.parse(JSON.stringify(boot));
+    return withExcluded(JSON.parse(JSON.stringify(boot)));
+  }
+  function withExcluded(b) {
+    b.options.exclude_entities = excluded.slice();
+    return b;
+  }
+
+  /** Same shape as GET api/entities */
+  async function entities() {
+    const b = bootstrap();
+    const areaOf = (eid) => {
+      const e = b.entities[eid] || {};
+      return e.area_id || ((b.devices[e.device_id] || {}).area_id) || null;
+    };
+    await new Promise((r) => setTimeout(r, 80));
+    return {
+      areas: b.areas.map((a) => ({ area_id: a.area_id, name: a.name })),
+      entities: b.states.filter((s) => s.entity_id !== 'sun.sun').map((s) => ({
+        entity_id: s.entity_id,
+        state: s.state,
+        attributes: { friendly_name: s.attributes.friendly_name, device_class: s.attributes.device_class, unit_of_measurement: s.attributes.unit_of_measurement, current_temperature: s.attributes.current_temperature },
+        area_id: areaOf(s.entity_id),
+        device: ((b.devices[(b.entities[s.entity_id] || {}).device_id]) || {}).name || null,
+        platform: (b.entities[s.entity_id] || {}).platform || null,
+        excluded_by: excluded.indexOf(s.entity_id) >= 0 ? 'app' : null
+      }))
+    };
+  }
+  async function saveExcluded(ids) {
+    excluded = Array.from(new Set(ids)).sort();
+    try { localStorage.setItem('climateplus.demo_excluded', JSON.stringify(excluded)); } catch (e) { /* private mode */ }
+    await new Promise((r) => setTimeout(r, 150));
+    return { ok: true, exclude_entities: excluded.slice() };
   }
 
   function seriesFor(id, t0, t1, n) {
@@ -194,8 +243,9 @@
     const out = { t: [], v: [], mn: [], mx: [] };
     let roomId;
     let metric;
+    let fn = null;
     const sensor = SENSORS.find((s) => s.id === eid);
-    if (sensor) { roomId = sensor.roomId; metric = sensor.metric; }
+    if (sensor) { roomId = sensor.roomId; metric = sensor.metric; fn = sensor.fn || null; }
     else if (eid.startsWith('climate.')) { roomId = eid.slice(8); metric = attr === 'current_humidity' ? 'humidity' : 'temperature'; }
     else if (eid.startsWith('weather.')) { roomId = 'tuin'; metric = 'temperature'; }
     else if (eid.startsWith('binary_sensor.')) {
@@ -213,7 +263,7 @@
     for (let i = 0; i < n; i++) {
       const tm = t0 + step * (i + 0.5);
       if (tm > nowMs) break;
-      const samples = [0.1, 0.5, 0.9].map((f) => value(metric, roomId, t0 + step * (i + f)));
+      const samples = [0.1, 0.5, 0.9].map((f) => (fn ? fn(t0 + step * (i + f)) : value(metric, roomId, t0 + step * (i + f))));
       const v = samples.reduce((a, b) => a + b, 0) / samples.length;
       out.t.push(Math.round(tm));
       out.v.push(round(v, 2));
@@ -270,11 +320,11 @@
     setTimeout(() => onMessage({ type: 'status', connected: true }), 50);
     const timer = setInterval(() => {
       const now = Date.now();
-      const pick = SENSORS.filter((s) => !ROOMS[s.roomId].stale && hash('tick', Math.floor(now / 5000) + s.id.length) < 0.6);
+      const pick = SENSORS.filter((s) => !isStale(s) && hash('tick', Math.floor(now / 5000) + s.id.length) < 0.6);
       pick.forEach((s) => {
         const state = boot.states.find((x) => x.entity_id === s.id);
         if (!state) return;
-        const v = round(value(s.metric, s.roomId, now), dec[s.metric]);
+        const v = round(sensorValueAt(s, now), dec[s.metric]);
         state.state = String(v);
         state.last_updated = state.last_reported = new Date(now).toISOString();
         onMessage({ type: 'state', entity_id: s.id, state: JSON.parse(JSON.stringify(state)) });
@@ -283,5 +333,5 @@
     return { close: () => clearInterval(timer) };
   }
 
-  CP.demo = { bootstrap, series, forecast, connect };
+  CP.demo = { bootstrap, series, forecast, connect, entities, saveExcluded };
 })();

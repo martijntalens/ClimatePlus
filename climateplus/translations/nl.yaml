@@ -37,7 +37,7 @@ configuration:
     description: Optionele sensor die de buitenluchtvochtigheid overschrijft.
   exclude_entities:
     name: Uitgesloten entiteiten
-    description: Entity-ID's die nooit in het dashboard verschijnen.
+    description: Entity-ID's die nooit in het dashboard verschijnen. Makkelijker - kies entiteiten uit een lijst op de instellingenpagina (tandwiel) in ClimatePlus.
   demo_mode:
     name: Demomodus
     description: Toon gegenereerde demodata in plaats van je eigen sensoren.

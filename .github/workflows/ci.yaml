@@ -45,6 +45,19 @@ jobs:
           assert out["v"] == [17.5], out
           assert server.is_relevant({"entity_id": "sensor.x", "attributes": {"device_class": "temperature"}}, set())
           assert not server.is_relevant({"entity_id": "sensor.y", "attributes": {"device_class": "power"}}, set())
+          assert server.clean_entity_ids(["sensor.b", "sensor.a", "sensor.a"]) == ["sensor.a", "sensor.b"]
+          for bad in ("sensor.a", ["../etc/passwd"], ["sensor.a", 5]):
+              try:
+                  server.clean_entity_ids(bad)
+              except ValueError:
+                  pass
+              else:
+                  raise AssertionError(f"accepted {bad!r}")
+          import tempfile, pathlib
+          server.SETTINGS_PATH = pathlib.Path(tempfile.mkdtemp()) / "settings.json"
+          assert server.load_settings() == {"exclude_entities": []}
+          server.save_settings({"exclude_entities": ["sensor.a"]})
+          assert server.load_settings() == {"exclude_entities": ["sensor.a"]}
           print("ok")
           EOF
       - name: Check JavaScript syntax
