@@ -1,0 +1,46 @@
+configuration:
+  language:
+    name: Language
+    description: Dashboard language. "auto" follows the Home Assistant language.
+  temperature_comfort_min:
+    name: Comfort temperature (min)
+    description: Lower bound of the comfortable indoor temperature range.
+  temperature_comfort_max:
+    name: Comfort temperature (max)
+    description: Upper bound of the comfortable indoor temperature range.
+  humidity_comfort_min:
+    name: Comfort humidity (min %)
+    description: Below this relative humidity the air is considered dry.
+  humidity_comfort_max:
+    name: Comfort humidity (max %)
+    description: Above this relative humidity the air is considered humid.
+  co2_warning:
+    name: CO2 warning level (ppm)
+    description: CO2 level at which ventilation is advised.
+  co2_critical:
+    name: CO2 critical level (ppm)
+    description: CO2 level that is considered poor air quality.
+  stale_sensor_hours:
+    name: Stale sensor threshold (hours)
+    description: Sensors that did not report for this many hours are flagged.
+  low_battery_percent:
+    name: Low battery threshold (%)
+    description: Climate sensors with a battery level below this value are flagged.
+  weather_entity:
+    name: Weather entity
+    description: Optional weather entity (e.g. weather.home). Auto-detected when empty.
+  outdoor_temperature_entity:
+    name: Outdoor temperature sensor
+    description: Optional sensor that overrides the outdoor temperature.
+  outdoor_humidity_entity:
+    name: Outdoor humidity sensor
+    description: Optional sensor that overrides the outdoor humidity.
+  exclude_entities:
+    name: Excluded entities
+    description: Entity IDs that should never appear in the dashboard.
+  demo_mode:
+    name: Demo mode
+    description: Show generated demo data instead of your own sensors.
+  log_level:
+    name: Log level
+    description: Verbosity of the app log.

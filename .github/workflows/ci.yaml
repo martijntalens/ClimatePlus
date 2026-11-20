@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-app:
+    name: App configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint Home Assistant app
+        uses: frenck/action-addon-linter@v2
+        with:
+          path: "./climateplus"
+
+  code:
+    name: Python & JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install aiohttp
+        run: pip install aiohttp
+      - name: Compile backend
+        run: python -m py_compile climateplus/app/server.py
+      - name: Import backend and test resampling
+        run: |
+          cd climateplus/app
+          python - <<'EOF'
+          import server
+          pts = [(0, 10.0), (50, 20.0)]
+          out = server.bucketize(pts, 0, 100, 2)
+          assert out["v"] == [10.0, 20.0], out
+          out = server.bucketize([(0, 10.0), (25, 20.0)], 0, 100, 1)
+          assert out["v"] == [17.5], out
+          assert server.is_relevant({"entity_id": "sensor.x", "attributes": {"device_class": "temperature"}}, set())
+          assert not server.is_relevant({"entity_id": "sensor.y", "attributes": {"device_class": "power"}}, set())
+          print("ok")
+          EOF
+      - name: Check JavaScript syntax
+        run: for f in climateplus/app/static/js/*.js; do node --check "$f"; done
+      - name: Shellcheck run script
+        run: shellcheck -s bash climateplus/run.sh || true

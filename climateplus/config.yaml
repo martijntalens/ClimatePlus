@@ -1,0 +1,50 @@
+name: ClimatePlus
+version: "1.0.0"
+slug: climateplus
+description: >-
+  Whole-home climate dashboard: temperature, humidity, CO2, air quality,
+  light, trends, history heatmaps and comfort insights per room.
+url: https://github.com/martijntalens/ClimatePlus
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:home-thermometer-outline
+panel_title: ClimatePlus
+# Read-only access to the Home Assistant Core API (states, registries,
+# history and statistics). No ports are exposed; access is via ingress only.
+homeassistant_api: true
+options:
+  language: auto
+  temperature_comfort_min: 19.5
+  temperature_comfort_max: 22.5
+  humidity_comfort_min: 40
+  humidity_comfort_max: 60
+  co2_warning: 1000
+  co2_critical: 1400
+  stale_sensor_hours: 6
+  low_battery_percent: 20
+  exclude_entities: []
+  demo_mode: false
+  log_level: info
+schema:
+  language: list(auto|nl|en)
+  temperature_comfort_min: float(5,35)
+  temperature_comfort_max: float(5,35)
+  humidity_comfort_min: int(0,100)
+  humidity_comfort_max: int(0,100)
+  co2_warning: int(400,5000)
+  co2_critical: int(400,5000)
+  stale_sensor_hours: int(1,168)
+  low_battery_percent: int(0,100)
+  weather_entity: str?
+  outdoor_temperature_entity: str?
+  outdoor_humidity_entity: str?
+  exclude_entities:
+    - str
+  demo_mode: bool
+  log_level: list(debug|info|warning|error)

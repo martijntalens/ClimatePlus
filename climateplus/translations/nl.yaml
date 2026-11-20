@@ -1,0 +1,46 @@
+configuration:
+  language:
+    name: Taal
+    description: Taal van het dashboard. "auto" volgt de taal van Home Assistant.
+  temperature_comfort_min:
+    name: Comforttemperatuur (min)
+    description: Ondergrens van het comfortabele binnentemperatuurbereik.
+  temperature_comfort_max:
+    name: Comforttemperatuur (max)
+    description: Bovengrens van het comfortabele binnentemperatuurbereik.
+  humidity_comfort_min:
+    name: Comfort luchtvochtigheid (min %)
+    description: Onder deze relatieve luchtvochtigheid geldt de lucht als droog.
+  humidity_comfort_max:
+    name: Comfort luchtvochtigheid (max %)
+    description: Boven deze relatieve luchtvochtigheid geldt de lucht als vochtig.
+  co2_warning:
+    name: CO2 waarschuwing (ppm)
+    description: CO2-niveau waarbij ventileren wordt geadviseerd.
+  co2_critical:
+    name: CO2 kritiek (ppm)
+    description: CO2-niveau dat als slechte luchtkwaliteit geldt.
+  stale_sensor_hours:
+    name: Sensor verouderd na (uur)
+    description: Sensoren die zo lang niets hebben gemeld worden gemarkeerd.
+  low_battery_percent:
+    name: Lage batterij (%)
+    description: Klimaatsensoren met een batterijniveau onder deze waarde worden gemarkeerd.
+  weather_entity:
+    name: Weer-entiteit
+    description: Optionele weer-entiteit (bijv. weather.home). Wordt automatisch gezocht als leeg.
+  outdoor_temperature_entity:
+    name: Buitentemperatuursensor
+    description: Optionele sensor die de buitentemperatuur overschrijft.
+  outdoor_humidity_entity:
+    name: Buitenluchtvochtigheidssensor
+    description: Optionele sensor die de buitenluchtvochtigheid overschrijft.
+  exclude_entities:
+    name: Uitgesloten entiteiten
+    description: Entity-ID's die nooit in het dashboard verschijnen.
+  demo_mode:
+    name: Demomodus
+    description: Toon gegenereerde demodata in plaats van je eigen sensoren.
+  log_level:
+    name: Logniveau
+    description: Hoeveel details het app-log toont.
