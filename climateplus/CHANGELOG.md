@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0
+
+- Charts on phones and tablets: tap a point to keep its values on screen until
+  you tap somewhere else. Drag sideways to move through the chart; swipe up or
+  down to scroll the page. Works for line charts, the heatmap and the comfort
+  chart.
+- Long-pressing a chart no longer starts text selection or the context menu.
+- Comfort chart points are easier to hit with a finger.
+- The heatmap sensor picker no longer sticks out of the card on small screens.
+
 ## 1.1.1
 
 - Fix: the dashboard reloaded every few seconds when Home Assistant has

@@ -165,6 +165,67 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Touch: a tap pins the tooltip until the user taps somewhere else    */
+  /* ------------------------------------------------------------------ */
+  let pinned = null; // { el, clear }
+  function pin(el, clear) {
+    if (pinned && pinned.el !== el) pinned.clear();
+    pinned = { el, clear };
+    el.classList.add('pinned');
+  }
+  function unpin() {
+    if (!pinned) return;
+    const p = pinned;
+    pinned = null;
+    p.el.classList.remove('pinned');
+    p.clear();
+  }
+  const isPinned = (el) => !!pinned && pinned.el === el;
+  /** forget a pin when the chart is redrawn (its tooltip is gone) */
+  function resetPin(el) {
+    if (isPinned(el)) { pinned = null; el.classList.remove('pinned'); }
+  }
+  const isTouch = (ev) => ev.pointerType === 'touch' || ev.pointerType === 'pen';
+  // A tap (not a scroll) outside the pinned chart releases it.
+  let tapStart = null;
+  let lastPointerType = 'mouse';
+  document.addEventListener('pointerdown', (ev) => { tapStart = { x: ev.clientX, y: ev.clientY }; lastPointerType = ev.pointerType; }, true);
+  document.addEventListener('pointerup', (ev) => {
+    if (!pinned || !tapStart) return;
+    const moved = Math.abs(ev.clientX - tapStart.x) + Math.abs(ev.clientY - tapStart.y) > 10;
+    if (!moved && !pinned.el.contains(ev.target)) unpin();
+  }, true);
+  // Long-press on a chart should not open the text-selection / context menu
+  document.addEventListener('contextmenu', (ev) => {
+    if (lastPointerType !== 'mouse' && ev.target.closest && ev.target.closest('.chart')) ev.preventDefault();
+  });
+
+  /**
+   * Wire pointer handling for a chart. show(ev) draws the tooltip for the event
+   * position and returns false when there is nothing to show; clear() hides it.
+   * Mouse: hover. Touch: tap pins, horizontal drag scrubs, vertical drag scrolls.
+   */
+  function interact(el, target, show, clear) {
+    let start = null;
+    target.addEventListener('pointerdown', (ev) => {
+      if (!isTouch(ev)) { show(ev); return; }
+      start = { x: ev.clientX, y: ev.clientY };
+    });
+    target.addEventListener('pointermove', (ev) => {
+      if (!isTouch(ev)) { if (!isPinned(el)) show(ev); return; }
+      if (start && Math.abs(ev.clientX - start.x) > Math.abs(ev.clientY - start.y)) show(ev);
+    });
+    target.addEventListener('pointerup', (ev) => {
+      if (!isTouch(ev) || !start) return;
+      start = null;
+      if (show(ev) === false) { if (isPinned(el)) unpin(); else clear(); return; }
+      pin(el, clear);
+    });
+    target.addEventListener('pointercancel', () => { start = null; if (!isPinned(el)) clear(); });
+    target.addEventListener('pointerleave', (ev) => { if (!isTouch(ev) && !isPinned(el)) clear(); });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Line chart                                                          */
   /* ------------------------------------------------------------------ */
   /**
@@ -270,6 +331,7 @@
     series.forEach((s, i) => (svg += '<circle class="hdot" data-i="' + i + '" r="4.5" fill="' + s.color + '" style="display:none"/>'));
     svg += '<rect class="hit" x="' + m.l + '" y="0" width="' + pw + '" height="' + H + '" fill="transparent"/>';
     svg += '</svg>';
+    resetPin(el);
     el.innerHTML = svg;
 
     const tt = tooltip(el);
@@ -283,7 +345,7 @@
       const px = ev.clientX - rect.left;
       const target = t0 + ((px - m.l) / pw) * (t1 - t0);
       const ri = nearest(ref.t, target);
-      if (ri < 0) return;
+      if (ri < 0) return false;
       const tt0 = ref.t[ri];
       const cx = x(tt0);
       cross.setAttribute('x1', cx);
@@ -317,9 +379,7 @@
       cross.style.display = 'none';
       dots.forEach((d) => (d.style.display = 'none'));
     };
-    hit.addEventListener('pointermove', move);
-    hit.addEventListener('pointerdown', move);
-    hit.addEventListener('pointerleave', leave);
+    interact(el, hit, move, leave);
   }
 
   /* ------------------------------------------------------------------ */
@@ -386,12 +446,21 @@
       for (let i = 0; i <= 10; i++) stops.push(o.color(o.legend.min + ((o.legend.max - o.legend.min) * i) / 10) + ' ' + i * 10 + '%');
       html += '<div class="hm-legend"><span>' + esc(o.format(o.legend.min)) + '</span><div class="hm-ramp" style="background:linear-gradient(90deg,' + stops.join(',') + ')"></div><span>' + esc(o.format(o.legend.max)) + '</span></div>';
     }
+    resetPin(el);
     el.innerHTML = html;
     const tt = tooltip(el);
     const grid = el.querySelector('.hm');
-    grid.addEventListener('pointermove', (ev) => {
-      const cell = ev.target.closest('.hm-cell');
-      if (!cell) { tt.style.display = 'none'; return; }
+    let active = null;
+    const clear = () => {
+      tt.style.display = 'none';
+      if (active) { active.classList.remove('active'); active = null; }
+    };
+    const show = (ev) => {
+      // during a touch drag the event target stays the first cell; use the finger position
+      const hitEl = ev.pointerType === 'mouse' ? ev.target : document.elementFromPoint(ev.clientX, ev.clientY);
+      const cell = hitEl && hitEl.closest ? hitEl.closest('.hm-cell') : null;
+      if (!cell || !grid.contains(cell)) { clear(); return false; }
+      if (active !== cell) { if (active) active.classList.remove('active'); active = cell; cell.classList.add('active'); }
       const row = o.rows[+cell.dataset.r];
       const c = row.cells[+cell.dataset.c];
       const h = String(+cell.dataset.c).padStart(2, '0');
@@ -399,8 +468,9 @@
       const r = el.getBoundingClientRect();
       const cr = cell.getBoundingClientRect();
       placeTooltip(el, tt, cr.left - r.left + cr.width / 2, cr.top - r.top);
-    });
-    grid.addEventListener('pointerleave', () => (tt.style.display = 'none'));
+      return true;
+    };
+    interact(el, grid, show, clear);
   }
 
   /* ------------------------------------------------------------------ */
@@ -475,16 +545,35 @@
     });
     svg += labels;
     svg += '</svg>';
+    resetPin(el);
     el.innerHTML = svg;
     const tt = tooltip(el);
-    el.querySelectorAll('.pt').forEach((c) => {
-      c.addEventListener('pointerenter', () => {
-        const p = o.points[+c.dataset.i];
-        tt.innerHTML = '<div class="tt-time">' + esc(p.name) + '</div>' + (p.extra || []).map((r) => '<div class="tt-row"><span class="tt-name">' + esc(r[0]) + '</span><b>' + esc(r[1]) + '</b></div>').join('');
-        placeTooltip(el, tt, +c.getAttribute('cx'), +c.getAttribute('cy'));
+    const svgEl = el.querySelector('svg');
+    let active = null;
+    const clear = () => {
+      tt.style.display = 'none';
+      if (active) { active.classList.remove('active'); active = null; }
+    };
+    // nearest room point within reach of the pointer (generous for fingers)
+    const show = (ev) => {
+      const rect = svgEl.getBoundingClientRect();
+      const px = ev.clientX - rect.left;
+      const py = ev.clientY - rect.top;
+      const reach = ev.pointerType === 'mouse' ? 12 : 26;
+      let best = null;
+      pts.forEach((q) => {
+        const d = Math.hypot(q.cx - px, q.cy - py);
+        if (d <= reach && (!best || d < best.d)) best = { q, d };
       });
-      c.addEventListener('pointerleave', () => (tt.style.display = 'none'));
-    });
+      if (!best) { clear(); return false; }
+      const c = svgEl.querySelector('.pt[data-i="' + best.q.i + '"]');
+      if (active !== c) { if (active) active.classList.remove('active'); active = c; if (c) c.classList.add('active'); }
+      const p = best.q.p;
+      tt.innerHTML = '<div class="tt-time">' + esc(p.name) + '</div>' + (p.extra || []).map((r) => '<div class="tt-row"><span class="tt-name">' + esc(r[0]) + '</span><b>' + esc(r[1]) + '</b></div>').join('');
+      placeTooltip(el, tt, best.q.cx, best.q.cy);
+      return true;
+    };
+    interact(el, svgEl, show, clear);
   }
 
   /* ------------------------------------------------------------------ */

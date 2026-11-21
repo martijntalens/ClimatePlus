@@ -246,7 +246,8 @@ a.tbar:hover { background: var(--surface-2); }
 .chip .ic { width: 15px; height: 15px; }
 .chip:hover { border-color: var(--border-strong); color: var(--text); }
 .chip.active { background: var(--text); border-color: var(--text); color: var(--surface); }
-.select { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
+.select { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); max-width: 100%; min-width: 0; }
+.select select { min-width: 0; text-overflow: ellipsis; }
 .select select, .search { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; padding: 7px 10px; max-width: 100%; }
 .search { min-width: 260px; flex: 1; max-width: 420px; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 8px; }
@@ -260,7 +261,12 @@ a.tbar:hover { background: var(--surface-2); }
 
 /* Charts ---------------------------------------------------------------- */
 .chart-box { position: relative; min-height: 120px; }
-.chart { position: relative; }
+.chart { position: relative; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+/* vertical swipes scroll the page, horizontal drags scrub through the chart */
+.chart svg, .chart .hm { touch-action: pan-y; }
+.chart .pt-label { pointer-events: none; }
+.chart .pt.active { stroke: var(--text); stroke-width: 2.5; }
+.hm-cell.active { outline: 2px solid var(--text); outline-offset: -1px; }
 .chart svg { display: block; overflow: visible; font-family: var(--font); }
 .chart .grid { stroke: var(--grid); stroke-width: 1; }
 .chart .baseline { stroke: var(--axis); stroke-width: 1; }

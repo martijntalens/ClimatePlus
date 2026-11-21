@@ -38,6 +38,13 @@ for example your phone's light and pressure sensors, are shown in a separate
 scored and not included in the house figures or advice. Assign them to an area
 in Home Assistant, or hide them on the settings page.
 
+## Using the charts
+
+Hover a chart with the mouse to see the values at that moment. On a phone or
+tablet, **tap** a point to keep its values on screen until you tap somewhere
+else; drag sideways to move through the chart. The dashboard does not refresh
+the page while a value is shown.
+
 ## Hiding entities
 
 Open the **settings page** (gear icon at the top right) and tick the entities
