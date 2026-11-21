@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1
+
+- Fix: the dashboard reloaded every few seconds when Home Assistant has
+  climate-like entities that ClimatePlus skips on purpose (for example the
+  diagnostic device temperature of Zigbee plugs). Dashboards now only reload
+  when areas, devices or the set of shown entities actually change.
+- Live updates no longer redraw the page while you hover or touch a chart, keep
+  the scroll position, and skip redraws when nothing visible changed.
+
 ## 1.1.0
 
 - Entities without an area are no longer averaged into a "No area" room. They

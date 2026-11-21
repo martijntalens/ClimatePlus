@@ -58,6 +58,22 @@ jobs:
           assert server.load_settings() == {"exclude_entities": []}
           server.save_settings({"exclude_entities": ["sensor.a"]})
           assert server.load_settings() == {"exclude_entities": ["sensor.a"]}
+          # value changes of skipped (diagnostic) sensors must not reload dashboards
+          async def _noop(_msg):
+              pass
+          ha = server.HomeAssistant({"exclude_entities": []}, {}, _noop)
+          calls = []
+          ha._schedule_reload = lambda **kw: calls.append(kw)
+          diag = lambda v: {"entity_id": "sensor.plug_device_temperature", "state": v, "attributes": {"device_class": "temperature"}}
+          ha.entity_registry = {"sensor.plug_device_temperature": {"entity_category": "diagnostic"}}
+          ha.states = {"sensor.plug_device_temperature": diag("30")}
+          ha._rebuild_relevant()
+          assert ha.relevant == set()
+          ha._on_state_changed({"data": {"entity_id": "sensor.plug_device_temperature", "old_state": diag("30"), "new_state": diag("31")}})
+          assert calls == [], calls
+          new = {"entity_id": "sensor.new_temp", "state": "20", "attributes": {"device_class": "temperature"}}
+          ha._on_state_changed({"data": {"entity_id": "sensor.new_temp", "old_state": None, "new_state": new}})
+          assert len(calls) == 1, calls
           print("ok")
           EOF
       - name: Check JavaScript syntax

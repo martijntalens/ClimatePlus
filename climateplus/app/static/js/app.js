@@ -93,6 +93,8 @@
     settings: { q: '', filter: 'all', catalog: null, draft: null, saving: false, message: null },
     cache: {},
     dirty: false,
+    lastChartTouch: 0,
+    lastHtml: null,
     theme: store.get('theme') || 'auto'
   };
   const RANGES = {
@@ -272,6 +274,8 @@
   /* ------------------------------------------------------------------ */
   async function load() {
     const boot = await CP.api.bootstrap();
+    const reload = !!S.model;
+    const scrollY = window.scrollY;
     S.boot = boot;
     CP.i18n.setLanguage((boot.options || {}).language, (boot.config || {}).language);
     S.model = C.buildModel(boot);
@@ -280,9 +284,13 @@
     S.lastUpdate = Date.now();
     S.error = null;
     S.cache = {};
-    S.spark = null;
+    // On a reload keep the sparklines and forecast on screen while they refresh
+    // in the background, so the page does not collapse and jump.
+    if (!reload) S.spark = null;
+    S.lastHtml = null;
     renderShell();
     route();
+    if (reload) window.scrollTo(0, scrollY);
     loadSpark();
     loadForecast();
   }
@@ -310,9 +318,12 @@
     if (oh) ids.push(oh);
     if (!ids.length) return;
     try {
+      const first = !S.spark;
       S.spark = await CP.api.series(ids, { hours: 24, points: 96 });
       S.sparkAt = Date.now();
-      if (['overview', 'comfort'].indexOf(S.route.view) >= 0) renderView();
+      // first load: draw now; refreshes go through the live tick (which waits while a chart is in use)
+      if (first && ['overview', 'comfort'].indexOf(S.route.view) >= 0) renderView();
+      else S.dirty = true;
     } catch (e) {
       console.warn('ClimatePlus: sparkline load failed', e);
     }
@@ -324,10 +335,12 @@
   async function loadForecast() {
     if (!S.model.weather) return;
     try {
+      const first = !S.forecast;
       const res = await CP.api.forecast(S.model.weather, 'daily');
       S.forecast = res.forecast || [];
       S.forecastAt = Date.now();
-      if (S.route.view === 'overview') renderView();
+      if (first && S.route.view === 'overview') renderView();
+      else S.dirty = true;
     } catch (e) { S.forecast = []; }
   }
   async function cached(key, ttl, fn) {
@@ -362,10 +375,12 @@
     if (S.model.weather && Date.now() - S.forecastAt > 30 * 60000) loadForecast();
     updateStatus();
     if (!S.dirty) return;
+    const view = S.route.view;
+    // Never redraw under the user's hand: wait while a chart tooltip is open,
+    // the pointer is on a chart, or a chart was touched in the last 15 seconds.
+    if (document.querySelector('.chart:hover, .tt[style*="block"]') || Date.now() - S.lastChartTouch < 15000) return;
     S.ev = C.evaluate(S.model);
     S.dirty = false;
-    const view = S.route.view;
-    if (document.querySelector('.chart:hover, .tt[style*="block"]')) { S.dirty = true; return; }
     if (view === 'sensors') renderSensorRows();
     else if (view === 'overview' || view === 'comfort' || view === 'room') renderView(true);
   }
@@ -391,7 +406,7 @@
   function renderView(live) {
     if (!S.model) return;
     const v = S.route.view;
-    if (v === 'overview') viewOverview();
+    if (v === 'overview') viewOverview(live);
     else if (v === 'trends') viewTrends(live);
     else if (v === 'heatmap') viewHeatmap();
     else if (v === 'comfort') viewComfort();
@@ -433,7 +448,7 @@
   /* ------------------------------------------------------------------ */
   /* Overview                                                            */
   /* ------------------------------------------------------------------ */
-  function viewOverview() {
+  function viewOverview(live) {
     const m = S.model;
     const ev = S.ev;
     const h = ev.house;
@@ -526,6 +541,10 @@
 
     // indoor vs outdoor
     html += card('', cardHead(t('indoor_vs_outdoor')) + '<div id="io-legend"></div><div id="io-chart" class="chart-box">' + (S.spark ? '' : loadingBox(240)) + '</div>');
+    // live update without visible change (e.g. a value that rounds the same): leave the page alone
+    const key = 'overview|' + isDark() + '|' + html;
+    if (live && S.lastHtml === key && document.getElementById('io-chart')) return;
+    S.lastHtml = key;
     main().innerHTML = html;
 
     main().querySelectorAll('.ins[data-room]').forEach((el) => el.addEventListener('click', () => (location.hash = '#/room/' + encodeURIComponent(el.dataset.room))));
@@ -1275,6 +1294,7 @@
       const fn = () => { if (applyTheme()) renderView(); };
       if (mq.addEventListener) mq.addEventListener('change', fn);
     }
+    document.addEventListener('pointerdown', (e) => { if (e.target.closest && e.target.closest('.chart')) S.lastChartTouch = Date.now(); }, { passive: true });
     setInterval(tick, 4000);
   });
 })();

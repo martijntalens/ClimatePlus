@@ -286,6 +286,7 @@ class HomeAssistant:
         self._pending: dict[int, asyncio.Future] = {}
         self._handlers: dict[int, Callable[[dict], None]] = {}
         self._reload_task: asyncio.Task | None = None
+        self._signature = ""
         self._tasks: set[asyncio.Task] = set()
         self._forecast_cache: dict[str, tuple[float, Any]] = {}
 
@@ -398,6 +399,7 @@ class HomeAssistant:
         states = await self.call({"type": "get_states"}) or []
         self.states = {s["entity_id"]: s for s in states}
         self._rebuild_relevant()
+        self._signature = self.structure_signature()
         await self.subscribe("state_changed", self._on_state_changed)
         for event_type in REGISTRY_EVENTS:
             await self.subscribe(event_type, self._on_registry_changed)
@@ -421,6 +423,7 @@ class HomeAssistant:
     async def set_app_excluded(self, entity_ids: list[str]) -> None:
         self.app_excluded = set(entity_ids)
         self._rebuild_relevant()
+        self._signature = self.structure_signature()
         await self.broadcast({"type": "reload"})
 
     def _rebuild_relevant(self) -> None:
@@ -487,6 +490,7 @@ class HomeAssistant:
         data = event.get("data") or {}
         entity_id = data.get("entity_id")
         new_state = data.get("new_state")
+        old_state = data.get("old_state")
         if not entity_id:
             return
         if new_state is None:
@@ -502,7 +506,15 @@ class HomeAssistant:
                 )
                 self._tasks.add(task)
                 task.add_done_callback(self._tasks.discard)
-        elif new_state is not None and is_relevant(new_state, self.excluded) and not is_battery(new_state):
+        elif (
+            new_state is not None
+            and not is_battery(new_state)
+            and is_relevant(new_state, self.excluded)
+            and (old_state is None or not is_relevant(old_state, self.excluded))
+        ):
+            # Only a *new* climate-like entity can change the dashboard. Value
+            # changes of entities that were deliberately skipped (diagnostic
+            # device temperatures, CPU sensors, ...) must not trigger a reload.
             self._schedule_reload()
 
     def _on_registry_changed(self, _event: dict) -> None:
@@ -518,14 +530,45 @@ class HomeAssistant:
                 if refresh_registries:
                     await self._load_registries()
                 self._rebuild_relevant()
-                await self.broadcast({"type": "reload"})
             except HAError as err:
                 _LOGGER.debug("Reload skipped: %s", err)
+                return
+            signature = self.structure_signature()
+            if signature == self._signature:
+                _LOGGER.debug("Registry/entity change without effect on the dashboard")
+                return
+            self._signature = signature
+            _LOGGER.debug("Dashboard structure changed, asking dashboards to reload")
+            await self.broadcast({"type": "reload"})
 
         self._reload_task = asyncio.create_task(_reload())
 
+    def structure_signature(self) -> str:
+        """Everything except live states; dashboards only reload when this changes."""
+        structure = self._structure()
+        structure["relevant"] = sorted(self.relevant)
+        return json.dumps(structure, sort_keys=True, default=str)
+
     def bootstrap(self) -> dict[str, Any]:
         states = [self.states[e] for e in sorted(self.relevant) if e in self.states]
+        cfg = self.config
+        return {
+            "demo": False,
+            "connected": self.connected.is_set(),
+            "config": {
+                "location_name": cfg.get("location_name"),
+                "language": cfg.get("language"),
+                "time_zone": cfg.get("time_zone"),
+                "unit_system": cfg.get("unit_system") or {},
+                "version": cfg.get("version"),
+                "latitude": cfg.get("latitude"),
+                "longitude": cfg.get("longitude"),
+            },
+            **self._structure(),
+            "states": states,
+        }
+
+    def _structure(self) -> dict[str, Any]:
         entities: dict[str, dict] = {}
         device_ids: set[str] = set()
         for entity_id in self.relevant:
@@ -566,25 +609,7 @@ class HomeAssistant:
             {"floor_id": f.get("floor_id"), "name": f.get("name"), "level": f.get("level"), "icon": f.get("icon")}
             for f in self.floors
         ]
-        cfg = self.config
-        return {
-            "demo": False,
-            "connected": self.connected.is_set(),
-            "config": {
-                "location_name": cfg.get("location_name"),
-                "language": cfg.get("language"),
-                "time_zone": cfg.get("time_zone"),
-                "unit_system": cfg.get("unit_system") or {},
-                "version": cfg.get("version"),
-                "latitude": cfg.get("latitude"),
-                "longitude": cfg.get("longitude"),
-            },
-            "areas": areas,
-            "floors": floors,
-            "devices": devices,
-            "entities": entities,
-            "states": states,
-        }
+        return {"areas": areas, "floors": floors, "devices": devices, "entities": entities}
 
     async def series(self, ids: list[str], start: datetime, end: datetime, points: int) -> dict[str, Any]:
         result: dict[str, Any] = {}
