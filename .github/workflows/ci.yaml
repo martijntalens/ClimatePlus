@@ -77,6 +77,6 @@ jobs:
           print("ok")
           EOF
       - name: Check JavaScript syntax
-        run: for f in climateplus/app/static/js/*.js dist/*.js; do node --check "$f"; done
+        run: for f in climateplus/app/static/js/*.js; do node --check "$f"; done
       - name: Shellcheck run script
         run: shellcheck -s bash climateplus/run.sh || true

@@ -48,54 +48,9 @@ Assistant dashboards. It works on its own (the app does not need to run) and
 shows per room whether airing dries the room, by comparing the absolute
 humidity (g/m³) indoors with outdoors.
 
-### Install with HACS (recommended)
-
-1. In HACS open **⋮ → Custom repositories**, add
-   `https://github.com/martijntalens/ClimatePlus` with type **Dashboard**.
-2. Search for **ClimatePlus ventilation card**, download it and reload the
-   browser when asked.
-
-### Install manually
-
-1. Download [`dist/climateplus-ventilation-card.js`](dist/climateplus-ventilation-card.js)
-   and copy it to the `www` folder in your Home Assistant configuration folder.
-2. Go to **Settings → Dashboards → ⋮ → Resources → Add resource**, enter
-   `/local/climateplus-ventilation-card.js` and choose **JavaScript module**.
-3. Reload the browser.
-
-### Use it
-
-Edit a dashboard, **Add card** and pick **ClimatePlus ventilation guide**, or
-add it in YAML:
-
-```yaml
-type: custom:climateplus-ventilation-card
-```
-
-Without options the card finds the rooms itself: every area with both a
-temperature and a humidity sensor (the sensors selected in the area settings
-win). The outdoor values come from an outdoor area (*Tuin, Buiten, Balkon, …*)
-or else from your weather entity. All options are optional:
-
-```yaml
-type: custom:climateplus-ventilation-card
-title: Ventilatiewijzer          # empty string hides the header
-areas:                           # which areas, in this order
-  - kantoor
-  - slaapkamer
-outdoor_temperature: sensor.tuin_temperatuur
-outdoor_humidity: sensor.tuin_luchtvochtigheid
-weather: weather.forecast_home   # used when no outdoor sensors are set or found
-show_hint: true
-show_legend: true
-margin: 1                        # g/m³ difference that counts as "little difference"
-rooms:                           # instead of areas: pick the sensors yourself
-  - name: Kantoor
-    temperature: sensor.kantoor_temperatuur
-    humidity: sensor.kantoor_luchtvochtigheid
-```
-
-Tap a room to open the humidity sensor's details.
+The card lives in its own repository, so it can be installed through the
+Marketplace (formerly HACS):
+[martijntalens/climateplus-ventilation-card](https://github.com/martijntalens/climateplus-ventilation-card).
 
 ## Security & privacy
 
